@@ -19,24 +19,31 @@ namespace NeuralNetwork.Functions.Activation
     /// <summary>
     /// 带可学习参数的激活函数类接口
     /// </summary>
-    interface LearnableActivationFunction :ActivationFunction
+    interface LearnableActivationFunction : ActivationFunction
     {
-        double Activate(double input,double learnedParameter);
+        double Activate(double input, double learnedParameter);
         double Derivate(double input, double learnedParameter);
     }
 
+    [Serializable]
     public class Direct : ActivationFunction
     {
+        double rate;
+        public Direct(double rate)
+        {
+            this.rate = rate;
+        }
         public double Activate(double input)
         {
-            return input;
+            return input * rate;
         }
         public double Derivate(double input)
         {
-            return 1;
+            return rate;
         }
     }
 
+    [Serializable]
     public class ReLU : ActivationFunction
     {
         public double Activate(double input)
@@ -49,6 +56,7 @@ namespace NeuralNetwork.Functions.Activation
         }
     }
 
+    [Serializable]
     public class Sigmoid : ActivationFunction
     {
         public double Activate(double input)
@@ -62,7 +70,8 @@ namespace NeuralNetwork.Functions.Activation
         }
     }
 
-    public class LeakyReLU:ActivationFunction
+    [Serializable]
+    public class LeakyReLU : ActivationFunction
     {
         double coefficient;
         public LeakyReLU(double coefficient)

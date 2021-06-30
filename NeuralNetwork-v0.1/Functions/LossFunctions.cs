@@ -11,6 +11,7 @@ namespace NeuralNetwork.Functions
     {
         Tensor Loss(Tensor realValue, Tensor predictedValue);
     }
+    [Serializable]
     class CrossEntropyLoss:LossFunction
     {
         public Tensor Loss(Tensor realValue, Tensor predictedValue)

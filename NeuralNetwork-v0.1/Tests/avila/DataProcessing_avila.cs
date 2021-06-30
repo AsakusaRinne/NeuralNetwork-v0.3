@@ -237,9 +237,9 @@ namespace NeuralNetwork.Tests.avila
                 {
                     wrong++;
                 }
-                Console.WriteLine($"{i}：Prediction is{prediction.PredictedResult}，Truth is {prediction.RealResult}，correct:{correct},wrong:{wrong} ");
+                //Console.WriteLine($"{i}：Prediction is{prediction.PredictedResult}，Truth is {prediction.RealResult}，correct:{correct},wrong:{wrong} ");
             }
-            Console.WriteLine(((double)correct) / (double)(correct + wrong));
+            Console.WriteLine($"acc: {((double)correct) / (double)(correct + wrong)}");
         }
     }
 
@@ -313,8 +313,8 @@ namespace NeuralNetwork.Tests.avila
             //    new FullConnectLayer(new LeakyReLU(0.1), 12, 16, false, new Normal()),
             //    new SoftMaxLayer(16, 12, new Normal())
             //    );
-            Model avilaFNN = new Model(new CrossEntropyLoss(),
-                new FullConnectLayer(new Direct(), 10, 10, true, new Normal()),
+            Model avilaFNN = new Model(new CrossEntropyLoss(),"AvilaFNN",
+                new FullConnectLayer(new Direct(1), 10, 10, true, new Normal()),
                 new FullConnectLayer(new Sigmoid(), 10, 16, false, new Normal(0, 2)),
                 new SoftMaxLayer(16, 12, new Normal(0, 5))
                 );

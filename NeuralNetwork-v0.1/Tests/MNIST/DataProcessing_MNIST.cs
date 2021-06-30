@@ -12,73 +12,10 @@ using System.Text.RegularExpressions;
 using System.IO;
 using System.Windows.Forms;
 using MathNet.Numerics;
+using System.Diagnostics;
 
 namespace NeuralNetwork.Tests.MNIST
 {
-    class MNISTDataConverter : IDataConvert<double[], double>
-    {
-        IClassifier classifier;
-        public MNISTDataConverter(IClassifier classifier)
-        {
-            this.classifier = classifier;
-
-        }
-        public ProcessData ConvertInputToProcess(InputData<double[], double> inputData)
-        {
-            return new ProcessData()
-            {
-                Data = TensorBuilder.FromMatrix(Matrix<double>.Build.DenseOfRowMajor(784, 1, inputData.OriginalData)),
-                Label = TensorBuilder.FromMatrix(Matrix<double>.Build.Dense(10, 1, ConvertToOnehot(inputData.OriginalLabel, 9)))
-            };
-        }
-
-        public OutputData<double[], double> ConvertProcessToOutput(ProcessData processData, IModel model)
-        {
-            return new OutputData<double[], double>()
-            {
-                OriginalData = processData.Data[0, 0].ToRowMajorArray(),
-                RealResult = GetFromOnehot(processData.Label[0, 0].ToRowMajorArray()),
-                PredictedResult = GetFromOnehot(classifier.Classify(model.Predict(processData.Data))[0, 0].ToRowMajorArray())
-            };
-        }
-
-        public static double[] ConvertToOnehot(double originalData, int maxValue)
-        {
-            double[] result = new double[maxValue + 1];
-            for (int i = 0; i <= result.Length - 1; i++)
-            {
-                if (i == originalData)
-                {
-                    result[i] = 1;
-                }
-                else
-                {
-                    result[i] = 0;
-                }
-            }
-            return result;
-        }
-
-        public static double GetFromOnehot(double[] oneHot)
-        {
-            double result = -1;
-            for (int i = 0; i <= oneHot.Length - 1; i++)
-            {
-                if (oneHot[i] == 1)
-                {
-                    if (result == -1)
-                    {
-                        result = i;
-                    }
-                    else
-                    {
-                        throw new Exception("错误的单热编码");
-                    }
-                }
-            }
-            return result;
-        }
-    }
 
     class MNISTDataProcessing
     {
@@ -115,6 +52,8 @@ namespace NeuralNetwork.Tests.MNIST
                 }
                 datalist.Add(temp);
             }
+            reader.Dispose();
+            fs.Dispose();
             return datalist;
         }
         /// <summary>
@@ -138,6 +77,8 @@ namespace NeuralNetwork.Tests.MNIST
                 data = reader.ReadByte();
                 datalist.Add(data);
             }
+            reader.Dispose();
+            fs.Dispose();
             return datalist;
         }
         /// <summary>
@@ -178,7 +119,23 @@ namespace NeuralNetwork.Tests.MNIST
             }
         }
 
-        public Tuple<List<ProcessData>, List<ProcessData>> DivideCollection(double rate, List<ProcessData> dataCollection)
+        /// <summary>
+        /// 对图像进行水平翻转
+        /// </summary>
+        /// <param name="image"></param>
+        /// <returns></returns>
+        public ProcessData HorizontalReverseImage(ProcessData image)
+        {
+            return new ProcessData()
+            {
+                Data = image.Data.InnerHorizontalReverse(),
+                Label = image.Label
+            };
+        }
+
+
+
+        public Tuple<ProcessData[], ProcessData[]> DivideCollection(double rate, List<ProcessData> dataCollection)
         {
             if (rate < 0 || rate > 1)
             {
@@ -207,7 +164,7 @@ namespace NeuralNetwork.Tests.MNIST
                     dividedCollection.Add(rndsub[i]);
                 }
             }
-            return new Tuple<List<ProcessData>, List<ProcessData>>(retainedCollection, dividedCollection);
+            return new Tuple<ProcessData[], ProcessData[]>(retainedCollection.ToArray(), dividedCollection.ToArray());
         }
 
         public List<ProcessData> GetProcessDataCollection(int count, List<InputData<double[], double>> inputDataCollection)
@@ -259,7 +216,7 @@ namespace NeuralNetwork.Tests.MNIST
             }
             return ((double)correct) / (double)(correct + wrong);
         }
-        public void EvaluateInDetails(IEnumerable<ProcessData> testCollection, IModel model)
+        public double EvaluateInDetails(IEnumerable<ProcessData> testCollection, IModel model)
         {
             int correct = 0;
             int wrong = 0;
@@ -275,10 +232,11 @@ namespace NeuralNetwork.Tests.MNIST
                 else
                 {
                     wrong++;
+                    //Console.WriteLine($"{i}：Prediction is{prediction.PredictedResult}，Truth is {prediction.RealResult}，correct:{correct},wrong:{wrong} ");
                 }
-                Console.WriteLine($"{i}：Prediction is{prediction.PredictedResult}，Truth is {prediction.RealResult}，correct:{correct},wrong:{wrong} ");
+                //Console.WriteLine($"{i}：Prediction is{prediction.PredictedResult}，Truth is {prediction.RealResult}，correct:{correct},wrong:{wrong} ");
             }
-            Console.WriteLine(((double)correct) / (double)(correct + wrong));
+            return ((double)correct) / (double)(correct + wrong);
         }
     }
 }

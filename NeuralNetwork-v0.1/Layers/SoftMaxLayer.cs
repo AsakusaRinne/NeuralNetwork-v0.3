@@ -10,12 +10,15 @@ using NeuralNetwork.Functions.Activation;
 
 namespace NeuralNetwork.Layers
 {
+    [Serializable]
     class SoftMaxLayer:LayerBase
     {
         public Tensor weight;
         public Tensor bias;
-        ActivationFunction ActivationFunc = new Direct();
+        private bool locked = false;
+        ActivationFunction ActivationFunc = new Direct(1);
 
+        public override bool Locked { get => locked; set => locked = value; }
         public override Tensor Weight
         {
             get
@@ -30,17 +33,24 @@ namespace NeuralNetwork.Layers
                 return this.bias;
             }
         }
+        public override LayerSign Sign => LayerSign.SoftMaxLayer;
         public SoftMaxLayer(int preCount,int thisCount,IContinuousDistribution distribution)
         {
             weight = TensorBuilder.FromMatrix(Matrix<double>.Build.Random(thisCount, preCount, distribution));
             bias = TensorBuilder.FromMatrix(Matrix<double>.Build.Dense(thisCount, 1, 0));
         }
 
+        public SoftMaxLayer(Matrix<double> w)
+        {
+            weight = TensorBuilder.FromMatrix(w);
+            bias = TensorBuilder.FromMatrix(Matrix<double>.Build.Dense(weight[0,0].RowCount, 1, 0));
+        }
+
         public override Tensor Push(Tensor preOutput)
         {
             //Tensor temp = (weight * preOutput+bias).Map(r => Math.Exp(r));
             Tensor temp = (weight * preOutput).Map(r => Math.Exp(r));
-            Tensor oneC = TensorBuilder.FromMatrix(Matrix<double>.Build.Dense(1, temp[0, 0].RowCount, 1));
+            //Tensor oneC = TensorBuilder.FromMatrix(Matrix<double>.Build.Dense(1, temp[0, 0].RowCount, 1));
             //return temp / (oneC * temp);
             return temp / (temp.SumAll());
         }
@@ -49,7 +59,7 @@ namespace NeuralNetwork.Layers
         {
             //Tensor temp = (weight * preOutput+bias).Map(r => Math.Exp(r));
             Tensor temp = (weight * preOutput ).Map(r => Math.Exp(r));
-            Tensor oneC = TensorBuilder.FromMatrix(Matrix<double>.Build.Dense(1, temp[0, 0].RowCount, 1));
+            //Tensor oneC = TensorBuilder.FromMatrix(Matrix<double>.Build.Dense(1, temp[0, 0].RowCount, 1));
             //return temp / (oneC * temp);
             return temp / (temp.SumAll());
         }
@@ -60,12 +70,12 @@ namespace NeuralNetwork.Layers
         /// <param name="preOutput"></param>
         /// <param name="nextWeight"></param>
         /// <returns></returns>
-        public override Tensor ComputeLoss(Tensor nextLoss, Tensor preOutput, Tensor nextWeight)
+        public override Tensor ComputeLoss(Tensor nextLoss, Tensor preOutput, Tensor nextWeight, LayerSign nextType)
         {
             return -nextLoss;
         }
 
-        public override Tuple< Tensor,Tensor> GetGradient(Tensor nextLoss, Tensor preOutput, Tensor nextWeight)
+        public override Tuple< Tensor,Tensor> GetGradient(Tensor nextLoss, Tensor preOutput, Tensor nextWeight, LayerSign nextType)
         {
             var loss = -nextLoss;
             return new Tuple<Tensor, Tensor>(loss  *preOutput.InnerTranspose(), loss);
@@ -73,8 +83,11 @@ namespace NeuralNetwork.Layers
 
         public override void BPRefresh(Tensor gradient, Tensor loss, double theta)
         {
-            weight = weight - theta * gradient;
-            //bias = bias - theta * loss;
+            if (!locked)
+            {
+                weight = weight - theta * gradient;
+                //bias = bias - theta * loss;
+            }
         }
     }
 }

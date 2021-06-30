@@ -10,6 +10,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Data;
 
 namespace NeuralNetwork.Train
 {
@@ -19,6 +20,7 @@ namespace NeuralNetwork.Train
         bool dropOut;
         double dropRate;
         LearnRateOptimizer learnRateOptimizer;
+        public DataTable lossTable;
 
         public Trainer(int batchSize,bool dropOut,double dropRate,LearnRateOptimizer learnRateOptimizer)
         {
@@ -30,6 +32,9 @@ namespace NeuralNetwork.Train
 
         public virtual IModel Train(IModel model,ProcessData[] dataCollection)
         {
+            lossTable = new DataTable();
+            lossTable.Columns.Add("Times");
+            lossTable.Columns.Add("loss");
             if (dataCollection.Count() % batchSize != 0)
             {
                 throw new Exception("当前版本暂时只支持整数倍小批量下降");
@@ -41,31 +46,59 @@ namespace NeuralNetwork.Train
                 Tensor[] lossList;
                 for (int i = 0; i <= dataCollection.Count() - 1; i=i+batchSize)
                 {
-                    Stopwatch sw = new Stopwatch();
-                    //sw.Start();
                     ProcessData[] tempGroup = new ProcessData[batchSize];
                     for (int j = i; j <= i + batchSize - 1; j++)
                     {
                         tempGroup[j-i] = dataCollection[j];
                     }
-                    //sw.Stop();
-                    //Console.WriteLine("PreWork:" + sw.Elapsed);
-                    sw.Start();
                     (gradientList,lossList) = GetAverageGradient(model, tempGroup);
-                    sw.Stop();
-                    Console.WriteLine("GetGradientAndLoss:"+sw.Elapsed);
-                    //sw.Restart();
-                    //lossList = GetAverageLoss(model, tempGroup);
-                    //sw.Stop();
-                    //Console.WriteLine("GetLoss:"+sw.Elapsed);
-                    //sw.Restart();
                     model = BPRefresh(model, gradientList, lossList, theta);
-                    //sw.Stop();
-                    //Console.WriteLine("BPRefresh:"+sw.Elapsed);
-                    //sw.Restart();
+                    lossTable.Rows.Add(i, lossList[lossList.Length - 1].AbsoluteSumAll());
                     theta = learnRateOptimizer.Optimize(model.Count, i, dataCollection.Count(), model.GetWeightedGradient(gradientList));
-                    //sw.Stop();
-                    //Console.WriteLine("LearnRateOptimize:"+sw.Elapsed);
+                }
+            }
+            return model;
+        }
+
+        public virtual IModel Train(IModel model, ProcessData[] dataCollection,ProcessData[] verifyCollection)
+        {
+            lossTable = new DataTable();
+            lossTable.Columns.Add("Times");
+            lossTable.Columns.Add("loss");
+            if (dataCollection.Count() % batchSize != 0)
+            {
+                throw new Exception("当前版本暂时只支持整数倍小批量下降");
+            }
+            if (dropOut == false)
+            {
+                double[] theta = learnRateOptimizer.Init(model.Count, model.Layers.GetTypes());
+                Tensor[] gradientList;
+                Tensor[] lossList;
+                double prevLoss = 0;
+                double vLoss = 0;
+                for (int i = 0; i <= dataCollection.Count() - 1; i = i + batchSize)
+                {
+                    ProcessData[] tempGroup = new ProcessData[batchSize];
+                    for (int j = i; j <= i + batchSize - 1; j++)
+                    {
+                        tempGroup[j - i] = dataCollection[j];
+                    }
+                    (gradientList, lossList) = GetAverageGradient(model, tempGroup);
+                    model = BPRefresh(model, gradientList, lossList, theta);
+                    
+                    var tempv = GetFinalAbsoluteAverageLoss(model, verifyCollection).SumAll();
+                    lossTable.Rows.Add(i, tempv);
+                    if (tempv > vLoss && vLoss > prevLoss&&prevLoss!=0)
+                    {
+                        Console.WriteLine($"第{i}次时推出循环");
+                        break;
+                    }
+                    else
+                    {
+                        prevLoss = vLoss;
+                        vLoss = tempv;
+                    }
+                    theta = learnRateOptimizer.Optimize(model.Count, i, dataCollection.Count(), model.GetWeightedGradient(gradientList));
                 }
             }
             return model;
@@ -90,10 +123,11 @@ namespace NeuralNetwork.Train
         {
             Tensor[] gradientList = new Tensor[model.Count];
             Tensor[] lossList = new Tensor[model.Count];
+            var temp = model.GetGradientList(dataCollection[0]);
             for (int i = 0; i <= model.Count - 1; i++)
             {
-                gradientList[i]=TensorBuilder.AllZeros(model.Layers[i].Weight);
-                lossList[i]= TensorBuilder.AllZeros(model.Layers[i].Bias); 
+                gradientList[i]=TensorBuilder.AllZeros(temp.Item1[i]);
+                lossList[i]= TensorBuilder.AllZeros(temp.Item2[i]); 
             }
             //foreach(var data in dataCollection)
             for(int j=0;j<=dataCollection.Length-1;j++)
@@ -127,7 +161,18 @@ namespace NeuralNetwork.Train
                     lossList[i] = lossList[i] + tempList[i] / dataCollection.Count();
                 }
             }
-            return lossList;
+            return lossList.Select(r => r / dataCollection.Count()).ToList();
+        }
+
+        public static Tensor GetFinalAbsoluteAverageLoss(IModel model, IEnumerable<ProcessData> dataCollection)
+        {
+            Tensor loss = TensorBuilder.AllZeros(model.GetFinalLoss(dataCollection.ElementAt(0)));
+            foreach (var data in dataCollection)
+            {
+                var tempList = model.GetFinalLoss(data);
+                loss = loss + model.GetFinalLoss(data).OuterMap(r => r.PointwiseAbs());
+            }
+            return loss / dataCollection.Count();
         }
     }
 }

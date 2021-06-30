@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace NeuralNetwork.Models
 {
-    interface IModel
+    interface IModel:IModelSave
     {
         LayerBase this[int index]
         {
@@ -25,6 +25,10 @@ namespace NeuralNetwork.Models
             get;
             set;
         }
+        string Name
+        {
+            get;
+        }
         Tensor Predict(Tensor inputData);
         //double GetFinalLoss(ProcessData data);
         Tensor GetOutputAt(int index,Tensor inputData);
@@ -37,6 +41,7 @@ namespace NeuralNetwork.Models
         /// <returns>第一个为梯度列表，第二个为损失列表</returns>
         Tuple<Tensor[],Tensor[]> GetGradientList(ProcessData data);
         double[] GetWeightedGradient(Tensor[] gradientList);
+        Tensor GetFinalLoss(ProcessData data);
     }
 
     interface IModelSave
@@ -44,5 +49,13 @@ namespace NeuralNetwork.Models
         void SaveModel(string path = null, double accuracy = -1);
 
         T LoadModel<T>(string path);
+    }
+
+    enum ModelSaveMode
+    {
+        Final=0,
+        MaxAcc=1,
+        All=2,
+        MinLoss=3
     }
 }

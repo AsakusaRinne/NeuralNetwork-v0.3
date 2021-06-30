@@ -7,16 +7,19 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using MathNet.Numerics.LinearAlgebra;
+using System.Runtime.Remoting.Messaging;
 
 namespace NeuralNetwork.Layers
 {
+    [Serializable]
     class FullConnectLayer:LayerBase
     {
         ActivationFunction ActivationFunc;
         public Tensor weight;
         Tensor bias;
-        private bool Locked = false;
+        private bool locked = false;
         bool inputLayer;
+        public override bool Locked { get => locked; set => locked=value; }
         public override Tensor Weight
         {
             get
@@ -31,6 +34,7 @@ namespace NeuralNetwork.Layers
                 return this.bias;
             }
         }
+        public override LayerSign Sign => LayerSign.FullConnectLayer;
         /// <summary>
         /// 创建全连接层
         /// </summary>
@@ -49,9 +53,9 @@ namespace NeuralNetwork.Layers
                 {
                     throw new Exception("输入层权重必须为方阵");
                 }
-                weight = TensorBuilder.FromMatrix(Matrix<double>.Build.DenseIdentity(thisCount),name==null?null:(name+".weight"));
-                bias = TensorBuilder.FromMatrix(Matrix<double>.Build.Dense(thisCount,1, 0),name == null ? null : (name + ".bias"));
-                Locked = true;
+                weight = TensorBuilder.FromMatrix(Matrix<double>.Build.DenseIdentity(thisCount));
+                bias = TensorBuilder.FromMatrix(Matrix<double>.Build.Dense(thisCount,1, 0));
+                locked = true;
             }
             else
             {
@@ -59,44 +63,61 @@ namespace NeuralNetwork.Layers
                 {
                     distribution = new MathNet.Numerics.Distributions.Normal();
                 }
-                weight = TensorBuilder.FromMatrix(Matrix<double>.Build.Random(thisCount, preCount, distribution), name == null ? null : (name + ".weight"));
-                bias= TensorBuilder.FromMatrix(Matrix<double>.Build.Random(thisCount, 1, distribution), name == null ? null : (name + ".bias"));
+                weight = TensorBuilder.FromMatrix(Matrix<double>.Build.Random(thisCount, preCount, distribution));
+                bias= TensorBuilder.FromMatrix(Matrix<double>.Build.Random(thisCount, 1, distribution));
             }
             this.inputLayer = inputLayer;
         }
         public FullConnectLayer(ActivationFunction f,bool inputLayer, Matrix<double> w,Matrix<double> b, string name = null)
         {
             this.ActivationFunc = f;
-                weight = TensorBuilder.FromMatrix(w, name == null ? null : (name + ".weight"));
-                bias = TensorBuilder.FromMatrix(b, name == null ? null : (name + ".bias"));
+            weight = TensorBuilder.FromMatrix(w);
+            bias = TensorBuilder.FromMatrix(b);
             this.inputLayer = inputLayer;
         }
         public override Tensor Push(Tensor preOutput)
         {
-            return (weight*preOutput + bias).Map(ActivationFunc.Activate);
+            if (inputLayer)
+            {
+                return preOutput.Map(ActivationFunc.Activate);
+            }
+            else
+            {
+                return (weight * preOutput + bias).Map(ActivationFunc.Activate);
+            }
+            //return (weight * preOutput + bias).Map(ActivationFunc.Activate);
         }
 
         public override Tensor PushWithoutActivation(Tensor preOutput)
         {
-            return weight * preOutput + bias;
+            if (inputLayer)
+            {
+                return preOutput.Clone();
+            }
+            else
+            {
+                return (weight * preOutput + bias);
+            }
+            //return (weight * preOutput + bias);
         }
 
-        public override Tensor ComputeLoss(Tensor nextLoss, Tensor preOutput, Tensor nextWeight)
+        public override Tensor ComputeLoss(Tensor nextLoss, Tensor preOutput, Tensor nextWeight, LayerSign nextType)
         {
             if(inputLayer)
             {
-                return (nextWeight.InnerTranspose()) * nextLoss;
+                return nextWeight.InnerTransposeAndMultiply(nextLoss);
             }
             else
             {
                 Tensor pureInput = PushWithoutActivation(preOutput);
-                return pureInput.Map(ActivationFunc.Derivate).InnerDiagonal() * (nextWeight.InnerTranspose()) * nextLoss;
+                //return pureInput.Map(ActivationFunc.Derivate).InnerDiagonal() * (nextWeight.InnerTranspose()) * nextLoss;
+                return pureInput.Map(ActivationFunc.Derivate).PointMutiply((nextWeight.InnerTransposeAndMultiply(nextLoss)));
             }
         }
 
-        public override Tuple<Tensor,Tensor> GetGradient(Tensor nextLoss, Tensor preOutput, Tensor nextWeight)
+        public override Tuple<Tensor,Tensor> GetGradient(Tensor nextLoss, Tensor preOutput, Tensor nextWeight, LayerSign nextType)
         {
-            var loss = ComputeLoss(nextLoss, preOutput, nextWeight);
+            var loss = ComputeLoss(nextLoss, preOutput, nextWeight,nextType);
             if (inputLayer)
             {
                 //如果是全连接输入层，不需要输出梯度，后续计算理应不涉及，直接设为本层weight
@@ -110,7 +131,7 @@ namespace NeuralNetwork.Layers
 
         public override void BPRefresh(Tensor gradient, Tensor loss, double theta)
         {
-            if (Locked)
+            if (locked)
             {
 
             }

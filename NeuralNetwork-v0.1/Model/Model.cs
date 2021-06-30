@@ -12,21 +12,24 @@ using MathNet.Numerics.LinearAlgebra;
 using System.IO;
 using System.Runtime;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace NeuralNetwork.Models
 {
-    class Model:IModel,IModelSave
+    [Serializable]
+    class Model:IModel
     {
         public LayerBase[] layers;
         public int layerCount;
         public LossFunction LossFunc;
-        string name;
+        public readonly string name;
 
-        public Model(LossFunction lossFunction,params LayerBase[] layers)
+        public Model(LossFunction lossFunction,string name,params LayerBase[] layers)
         {
             this.layers = layers;
             this.layerCount = layers.Length;
             this.LossFunc = lossFunction;
+            this.name = name;
         }
 
         public LayerBase this[int index]
@@ -64,6 +67,10 @@ namespace NeuralNetwork.Models
             {
                 this.layers = value;
             }
+        }
+        public string Name
+        {
+            get { return name; }
         }
 
         public Tensor Predict(Tensor inputData)
@@ -127,7 +134,7 @@ namespace NeuralNetwork.Models
             List<Tensor> pushes = this.GetAllOutputs(data.Data);
             Tensor loss;
             //这里对softmax层进行了特别对待处理，应该如何统一化？
-            if (layers[layerCount - 1].GetType() == typeof(SoftMaxLayer))//反射是否开销太大了？
+            if (layers[layerCount - 1].Sign==LayerSign.SoftMaxLayer)//反射是否开销太大了？
             {
                 loss = data.Label-pushes[this.layerCount - 1];
             }
@@ -136,18 +143,21 @@ namespace NeuralNetwork.Models
                 loss = LossFunc.Loss(data.Label, pushes[this.layerCount - 1]);
             }
             Tensor nextWeight = TensorBuilder.FromMatrix(Matrix<double>.Build.DenseIdentity(data.Label[0, 0].RowCount));
+            LayerSign nextType = LayerSign.Nothing;
             for (int i= this.layerCount - 1; i>=2; i--)
             {
-                (gradientList[i],loss)=layers[i].GetGradient(loss, pushes[i - 1], nextWeight);
+                (gradientList[i],loss)=layers[i].GetGradient(loss, pushes[i - 1], nextWeight,nextType);
                 lossList[i] = loss;
                 //loss = layers[i].ComputeLoss(loss, pushes[i - 1], nextWeight);
                 nextWeight = layers[i].Weight;
+                nextType = layers[i].Sign;
             }
-            (gradientList[1],loss)=layers[1].GetGradient(loss, pushes[0], nextWeight);
+            (gradientList[1],loss)=layers[1].GetGradient(loss, pushes[0], nextWeight,nextType);
             lossList[1] = loss;
             //loss = layers[1].ComputeLoss(loss, pushes[0], nextWeight);
             nextWeight = layers[1].Weight;
-            (gradientList[0],lossList[0])=layers[0].GetGradient(loss, data.Data, nextWeight);
+            nextType = layers[1].Sign;
+            (gradientList[0],lossList[0])=layers[0].GetGradient(loss, data.Data, nextWeight,nextType);
             return new Tuple<Tensor[], Tensor[]>(gradientList, lossList);
         }
 
@@ -157,7 +167,7 @@ namespace NeuralNetwork.Models
             List<Tensor> pushes = this.GetAllOutputs(data.Data);
             Tensor loss;
             //这里对softmax层进行了特别对待处理，应该如何统一化？
-            if (layers[layerCount - 1].GetType() == typeof(SoftMaxLayer))
+            if (layers[layerCount - 1].Sign == LayerSign.SoftMaxLayer)
             {
                 loss = data.Label - pushes[this.layerCount - 1];
             }
@@ -166,18 +176,35 @@ namespace NeuralNetwork.Models
                 loss = LossFunc.Loss(data.Label, pushes[this.layerCount - 1]); ;
             }
             Tensor nextWeight = TensorBuilder.FromMatrix(Matrix<double>.Build.DenseIdentity(data.Label[0, 0].ColumnCount));
+            LayerSign nextType = LayerSign.Nothing;
             for (int i = this.layerCount - 1; i >= 2; i--)
             {
-                loss = layers[i].ComputeLoss(loss, pushes[i - 1], nextWeight);
+                loss = layers[i].ComputeLoss(loss, pushes[i - 1], nextWeight,nextType);
                 lossList[i]=loss;
                 nextWeight = layers[i].Weight;
+                nextType = layers[i].Sign;
             }
-            loss = layers[1].ComputeLoss(loss, pushes[0], nextWeight);
+            loss = layers[1].ComputeLoss(loss, pushes[0], nextWeight,nextType);
             lossList[1]=loss;
             nextWeight = layers[1].Weight;
-            loss = layers[0].ComputeLoss(loss, data.Data, nextWeight);
+            nextType = layers[1].Sign;
+            loss = layers[0].ComputeLoss(loss, data.Data, nextWeight,nextType);
             lossList[0]=loss;
             return lossList.ToList();
+        }
+
+        public Tensor GetFinalLoss(ProcessData data)
+        {
+            Tensor loss;
+            if (layers[layerCount - 1].Sign == LayerSign.SoftMaxLayer)
+            {
+                loss = data.Label - this.GetOutputAt(this.layerCount - 1, data.Data);
+            }
+            else
+            {
+                loss = LossFunc.Loss(data.Label, this.GetOutputAt(this.layerCount - 1, data.Data)); ;
+            }
+            return loss;
         }
 
         public double[] GetWeightedGradient(Tensor[] gradientList)
@@ -190,7 +217,7 @@ namespace NeuralNetwork.Models
                 //    throw new Exception("目前版本暂时不接受内部维度不同的张量");
                 //}
                 //result[i] = gradientList[i].AbsoluteSumAll() / (layers[i].Weight.DimensionX * layers[i].Weight.DimensionY * layers[i].Weight[0, 0].ColumnCount * layers[i].Weight[0, 0].RowCount);
-                result[i] = gradientList[i].AbsoluteMean();
+                result[i] = gradientList[i].AbsoluteMeanAll();
             }
             return result;
         }
@@ -205,11 +232,12 @@ namespace NeuralNetwork.Models
             {
                 Directory.CreateDirectory(path);
             }
-            if (accuracy == -1)
-            {
-                path = System.IO.Path.Combine(Application.StartupPath, "A" + accuracy.ToString("f3"));
-            }
-            path = System.IO.Path.Combine(path, this.GetType().ToString() + DateTime.Now.ToString("yyyyMMdd-HH"));
+            //if (accuracy == -1)
+            //{
+            //    path = System.IO.Path.Combine(Application.StartupPath, this.name);
+            //}
+            path = System.IO.Path.Combine(path, this.name+"-" + accuracy.ToString("f3") + ".model");
+            //path = System.IO.Path.Combine(path, "CNN_v1" + "-" + accuracy.ToString("f3") + ".model");
             Filehelper.SaveObject(path, this);
             Console.WriteLine("The Model has been save to" + path);
         }

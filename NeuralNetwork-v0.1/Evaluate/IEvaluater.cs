@@ -15,6 +15,19 @@ namespace NeuralNetwork.Evaluate
     }
     interface IClassifier
     {
+        /// <summary>
+        /// 将模型的输出转成单热编码
+        /// </summary>
+        /// <param name="predictedData"></param>
+        /// <returns></returns>
         Tensor Classify(Tensor predictedData);
+    }
+
+    class SoftMaxClassifier:IClassifier
+    {
+        public Tensor Classify(Tensor predictedData)
+        {
+            return predictedData.Map(r => r < predictedData[0, 0].ToRowMajorArray().Max() ? 0 : 1);
+        }
     }
 }

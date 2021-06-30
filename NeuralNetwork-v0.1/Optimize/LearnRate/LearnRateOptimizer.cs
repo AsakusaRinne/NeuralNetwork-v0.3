@@ -3,6 +3,7 @@ using NeuralNetwork.Struct;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -70,6 +71,95 @@ namespace NeuralNetwork.Optimize.LearnRate
             for (int i = 0; i <= count - 1; i++)
             {
                 result[i] = rate;
+            }
+            return result;
+        }
+    }
+
+    class TriangularCyclicOptimizer:LearnRateOptimizer
+    {
+        int period;
+        double upper;
+        double lower;
+        double declineRate;
+        /// <summary>
+        /// 三角循环学习率的构造函数
+        /// </summary>
+        /// <param name="period">循环周期，即多少step一个循环</param>
+        /// <param name="upper">第一个周期中学习率的上界</param>
+        /// <param name="lower">第一个周期中学习率的下界</param>
+        /// <param name="declineRate">上下界随周期的衰减速率</param>
+        public TriangularCyclicOptimizer(int period,double upper,double lower,double declineRate)
+        {
+            this.period = period;
+            this.upper = upper;
+            this.lower = lower;
+            this.declineRate = declineRate;
+        }
+
+        public double[] Init(int count, Type[] layerTypes)
+        {
+            double[] result = new double[count];
+            for (int i = 0; i <= count - 1; i++)
+            {
+                result[i] = lower;
+            }
+            return result;
+        }
+
+        public double[] Optimize(int count, int step, int totalStep, double[] gradient = null)
+        {
+            var m = Math.Floor((double)(1 + step / (2 * period)));
+            var b = Math.Abs(step / period - 2 * m + 1);
+            upper = upper * Math.Pow(declineRate, m-1);
+            lower= lower* Math.Pow(declineRate, m - 1);
+            var newRate = upper + (upper - lower) * Math.Max(0, 1 - b);
+            double[] result = new double[count];
+            for (int i = 0; i <= count - 1; i++)
+            {
+                result[i] = newRate;
+            }
+            return result;
+        }
+
+    }
+
+    class AdaGradOptimizer : LearnRateOptimizer
+    {
+        double original;
+        double[] accumulation;
+
+        /// <summary>
+        /// 初始化
+        /// </summary>
+        /// <param name="originalLearnRate">初始学习率</param>
+        public AdaGradOptimizer(double originalLearnRate)
+        {
+            this.original = originalLearnRate;
+        }
+
+        public double[] Init(int count, Type[] layerTypes = null)
+        {
+            double[] result = new double[count];
+            accumulation = new double[count];
+            for (int i = 0; i <= count - 1; i++)
+            {
+                result[i] = original;
+            }
+            return result;
+        }
+
+        public double[] Optimize(int count, int step, int totalStep, double[] gradient = null)
+        {
+            System.Diagnostics.Debug.Assert(gradient.Length == accumulation.Length);
+            for(int i = 0; i <= accumulation.Length-1; i++)
+            {
+                accumulation[i] = accumulation[i] + Math.Pow(gradient[i],2);
+            }
+            double[] result = new double[count];
+            for (int i = 0; i <= count - 1; i++)
+            {
+                result[i] = result[i] - original / (Math.Sqrt(accumulation[i] + 1e-8)) * gradient[i];
             }
             return result;
         }
